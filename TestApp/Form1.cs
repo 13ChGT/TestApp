@@ -107,7 +107,6 @@ namespace TestApp
 
         private void load_from_file()
         {
-            var stopWatch = Stopwatch.StartNew();
             connection.Open();
             OpenFileDialog openFileDialog = new OpenFileDialog();
             openFileDialog.Filter = "txt files (*.txt)|*.txt|All files (*.*)|*.*";
@@ -155,8 +154,7 @@ namespace TestApp
                        }
 
                    });
-                Debug.WriteLine("Parallel.ForEach() execution time = {0} seconds", stopWatch.Elapsed.TotalSeconds);
-                stopWatch = Stopwatch.StartNew();
+
                 Parallel.ForEach(WordCount, word =>
                 {
                     SQLiteCommand command = new SQLiteCommand("INSERT INTO Dictionary (Word, Number_of_interactions) VALUES (@Word, @Num)", connection);
@@ -170,7 +168,6 @@ namespace TestApp
 
             }
             connection.Close();
-            Debug.WriteLine("Parallel.ForEach() execution time = {0} seconds", stopWatch.Elapsed.TotalSeconds);
             updateAutoComplete();
         }
 
