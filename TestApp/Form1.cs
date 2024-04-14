@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data.SqlClient;
@@ -9,14 +9,17 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.IO;
 using System.Diagnostics;
+using System.Data.SQLite;
 
 
 namespace TestApp
 {
     public partial class Form1 : Form
     {
-        const string connectionLinkString = @"Data Source=(LocalDB)\MSSQLLocalDB;Initial Catalog=D:\DOCUMENTS\DBTEST.MDF;Integrated Security=True;Connect Timeout=30;Encrypt=False;TrustServerCertificate=False;ApplicationIntent=ReadWrite;MultiSubnetFailover=False";
-        SqlConnection connection = new SqlConnection(connectionLinkString);
+
+        const string connectionLinkString = @"Data Source=MyDatabase.sqlite;Version=3;";
+        SQLiteConnection connection = new SQLiteConnection(connectionLinkString);
+        
         List<string> globalList = new List<string>();
         int ToDelete = new int();
         public Form1()
@@ -51,7 +54,6 @@ namespace TestApp
             {
                 listBox1.DataSource = localList;
                 listBox1.Show();
-                Debug.WriteLine(listBox1.SelectedItem);
             }
             else
             {
@@ -83,7 +85,10 @@ namespace TestApp
 
         private void Form1_Load(object sender, EventArgs e)
         {
-            
+            connection.Open();
+            SQLiteCommand command = new SQLiteCommand("Create Table IF NOT EXISTS Dictionary(Word nvarchar(20), Number_of_interactions int)", connection);
+            command.ExecuteNonQuery();
+            connection.Close();
             updateAutoComplete();
 
         }
@@ -102,58 +107,77 @@ namespace TestApp
 
         private void load_from_file()
         {
+            var stopWatch = Stopwatch.StartNew();
             connection.Open();
             OpenFileDialog openFileDialog = new OpenFileDialog();
+            openFileDialog.Filter = "txt files (*.txt)|*.txt|All files (*.*)|*.*";
             DialogResult result = openFileDialog.ShowDialog();
             if (result == DialogResult.OK)
             {
                 string file = openFileDialog.FileName;
-                try
-                {
-                    string text = File.ReadAllText(file);
-                    Regex regularExpressions = new Regex("[^a-zA-ZЁёА-я]");
-                    text = regularExpressions.Replace(text, " ");
-                    string[] words = text.Split(
+                Dictionary<string, int> WordCount = new Dictionary<string, int>();
+                string text = File.ReadAllText(file);
+                Regex regularExpressions = new Regex("[^a-zA-ZЁёА-я]");
+                text = regularExpressions.Replace(text, " ");
+                string[] words = text.Split(
                         new char[] { ' ' },
                         StringSplitOptions.RemoveEmptyEntries);
-                    foreach (var word in words)
-                    {
+                Parallel.ForEach(words, word =>
+                   {
+                       word = word.ToLower();
+                       try
+                       {
+                           if (word.Length > 3)
+                           {
+                               if (!WordCount.ContainsKey(word))
+                               {
 
-                        if (word.Length > 3)
-                        {
-                            SqlCommand command = new SqlCommand("SELECT Count(*) FROM Dictionary WHERE Word = @Word", connection);
-                            command.Parameters.AddWithValue("@Word", word);
-                            int wordCount = (int)command.ExecuteScalar();
+                                   WordCount.Add(word, 1);
 
-                            if (wordCount > 0)
-                            {
-                                command = new SqlCommand("UPDATE Dictionary SET Number_of_interactions = Number_of_interactions + 1 WHERE Word = @Word", connection);
-                            }
-                            else
-                            {
-                                command = new SqlCommand("INSERT INTO Dictionary (Word, Number_of_interactions) VALUES (@Word, 1)", connection);
-                            }
-                            command.Parameters.AddWithValue("@Word", word);
-                            command.ExecuteNonQuery();
-                        }
 
-                    }
+                               }
+                               else
+                               {
+                                   WordCount[word] += 1;
+                               }
+                           }
+                       }
+                       catch (System.ArgumentException)
+                       {
+                           if (!WordCount.ContainsKey(word))
+                           {
+                               WordCount.Add(word, 1);
+                           }
+                           else
+                           {
+                               WordCount[word] += 1;
+                           }
+                       }
 
-                }
-
-                catch (IOException)
+                   });
+                Debug.WriteLine("Parallel.ForEach() execution time = {0} seconds", stopWatch.Elapsed.TotalSeconds);
+                stopWatch = Stopwatch.StartNew();
+                Parallel.ForEach(WordCount, word =>
                 {
-                }
+                    SQLiteCommand command = new SQLiteCommand("INSERT INTO Dictionary (Word, Number_of_interactions) VALUES (@Word, @Num)", connection);
+                    command.Parameters.AddWithValue("@Word", word.Key);
+                    command.Parameters.AddWithValue("@Num", word.Value);
+                    command.ExecuteNonQuery();
+                });
+
+
+
 
             }
             connection.Close();
+            Debug.WriteLine("Parallel.ForEach() execution time = {0} seconds", stopWatch.Elapsed.TotalSeconds);
             updateAutoComplete();
         }
 
         private void clear_table()
         {
             connection.Open();
-            SqlCommand command = new SqlCommand("Delete FROM Dictionary", connection);
+            SQLiteCommand command = new SQLiteCommand("Delete FROM Dictionary", connection);
             command.ExecuteNonQuery();
             globalList.Clear();
             connection.Close();
@@ -162,8 +186,8 @@ namespace TestApp
         private void updateAutoComplete()
         {
             connection.Open();
-            SqlCommand ReadDictionary = new SqlCommand("SELECT Word FROM Dictionary ORDER BY Number_of_interactions DESC, Word", connection);
-            SqlDataReader DictionaryData = ReadDictionary.ExecuteReader();
+            SQLiteCommand ReadDictionary = new SQLiteCommand("SELECT Word FROM Dictionary ORDER BY Number_of_interactions DESC, Word", connection);
+            SQLiteDataReader DictionaryData = ReadDictionary.ExecuteReader();
             while (DictionaryData.Read())
             {
                 globalList.Add(DictionaryData.GetString(0));
