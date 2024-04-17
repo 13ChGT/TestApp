@@ -1,8 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data.SqlClient;
-using System.Drawing;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -16,12 +13,10 @@ namespace TestApp
 {
     public partial class Form1 : Form
     {
+        private DatabaseManager DBManager = new DatabaseManager();
 
-        const string connectionLinkString = @"Data Source=MyDatabase.sqlite;Version=3;";
-        SQLiteConnection connection = new SQLiteConnection(connectionLinkString);
-        
-        List<string> globalList = new List<string>();
         int ToDelete = new int();
+        
         public Form1()
         {
             InitializeComponent();
@@ -29,7 +24,7 @@ namespace TestApp
 
         private void toolStripMenuItem4_Click(object sender, EventArgs e)
         {
-            clear_table();
+            DBManager.clear_table();
         }
 
         private void textBox1_TextChanged(object sender, EventArgs e)
@@ -42,14 +37,15 @@ namespace TestApp
             string[] words = textFromTextBox.Split(
                 new char[] { ' ' },
                 StringSplitOptions.RemoveEmptyEntries);
-            foreach (var word in globalList) {
+            foreach (var word in DBManager.globalList)
+            {
                 if (words.Length > 0)
-                    if ((word.StartsWith(words[words.Length - 1])) && (localList.Count < 5)) {
+                    if ((word.StartsWith(words[words.Length - 1])) && (localList.Count < 5))
+                    {
                         localList.Add(word);
                     }
-
             }
-            
+
             if (localList.Any() && !string.IsNullOrEmpty(textBox1.Text))
             {
                 listBox1.DataSource = localList;
@@ -59,57 +55,95 @@ namespace TestApp
             {
                 listBox1.Hide();
             }
-            if (textBox1.Text.Length > 0 && textBox1.Text != " " && globalList.Count>0) {
+            if (textBox1.Text.Length > 0 && textBox1.Text != " " && DBManager.globalList.Count > 0)
+            {
                 ToDelete = words[words.Length - 1].Length;
                 switch (textBox1.Text[textBox1.Text.Length - 1])
-            {
-                case ' ':
+                {
+                    case ' ':
                         listBox1.Hide();
-                    break;
+                        break;
 
-                case ',':
-                    if ((textBox1.Text[textBox1.Text.Length - 3].ToString() != " ") && textBox1.Text[textBox1.Text.Length - 2].ToString() == " ")
-                        textBox1.Text = textBox1.Text.Substring(0, textBox1.Text.Length - 2) + ",";
-                    break;
+                    case ',':
+                        if ((textBox1.Text[textBox1.Text.Length - 3].ToString() != " ") && textBox1.Text[textBox1.Text.Length - 2].ToString() == " ")
+                            textBox1.Text = textBox1.Text.Substring(0, textBox1.Text.Length - 2) + ",";
+                        break;
 
-                case '.':
-                    if((textBox1.Text[textBox1.Text.Length - 3].ToString() != " ") && (textBox1.Text[textBox1.Text.Length - 2].ToString() == " "))
-                        textBox1.Text = textBox1.Text.Substring(0, textBox1.Text.Length - 2) + ".";
-                    break;
-            }}
-
-
-        
-        
+                    case '.':
+                        if ((textBox1.Text[textBox1.Text.Length - 3].ToString() != " ") && (textBox1.Text[textBox1.Text.Length - 2].ToString() == " "))
+                            textBox1.Text = textBox1.Text.Substring(0, textBox1.Text.Length - 2) + ".";
+                        break;
+                }
+            }
         }
 
         private void Form1_Load(object sender, EventArgs e)
+        {
+            DBManager.init();
+        }
+
+        private void toolStripMenuItem2_Click_1(object sender, EventArgs e)
+        {
+            DBManager.clear_table();
+            DBManager.load_from_file();
+
+        }
+
+        private void toolStripMenuItem3_Click(object sender, EventArgs e)
+        {
+            DBManager.load_from_file();
+        }
+
+
+
+        void listBox_SelectedAdd(object sender, KeyEventArgs e)
+        {
+            bool check = true;
+            if (e.KeyValue == (decimal)Keys.Enter)
+            {
+                if (check)
+                {
+                    textBox1.Text += (((ListBox)sender).SelectedItem.ToString()).Substring(ToDelete);
+                    if (textBox1.Text[textBox1.Text.Length - 1].ToString() != " ")
+                        textBox1.Text += " ";
+                    System.Threading.Thread.Sleep(10);
+                    listBox1.Hide();
+                    check = false;
+                }
+            }
+            else
+            {
+                check = true;
+            }
+        }
+
+        private void listBox1_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            Debug.WriteLine(listBox1.SelectedItem);
+        }
+
+    }
+    public class DatabaseManager
+    {
+        const string connectionLinkString = @"Data Source=MyDatabase.sqlite;Version=3;";
+        SQLiteConnection connection = new SQLiteConnection(connectionLinkString);
+        public List<string> globalList = new List<string>();
+
+        public void init()
         {
             connection.Open();
             SQLiteCommand command = new SQLiteCommand("Create Table IF NOT EXISTS Dictionary(Word nvarchar(20), Number_of_interactions int)", connection);
             command.ExecuteNonQuery();
             connection.Close();
             updateAutoComplete();
-
         }
 
-        private void toolStripMenuItem2_Click_1(object sender, EventArgs e)
+        public void load_from_file()
         {
-            clear_table();
-            load_from_file();
-
-        }
-
-        private void toolStripMenuItem3_Click(object sender, EventArgs e)
-        {
-            load_from_file();
-        }
-
-        private void load_from_file()
-        {
+            //var stopWatch = Stopwatch.StartNew();
             connection.Open();
             OpenFileDialog openFileDialog = new OpenFileDialog();
-            openFileDialog.Filter = "txt files (*.txt)|*.txt|All files (*.*)|*.*";
+            openFileDialog.Filter = "txt files (*.txt)|*.txt";
             DialogResult result = openFileDialog.ShowDialog();
             if (result == DialogResult.OK)
             {
@@ -122,56 +156,48 @@ namespace TestApp
                         new char[] { ' ' },
                         StringSplitOptions.RemoveEmptyEntries);
                 Parallel.ForEach(words, word =>
-                   {
-                       word = word.ToLower();
-                       try
-                       {
-                           if (word.Length > 3)
-                           {
-                               if (!WordCount.ContainsKey(word))
-                               {
-
-                                   WordCount.Add(word, 1);
-
-
-                               }
-                               else
-                               {
-                                   WordCount[word] += 1;
-                               }
-                           }
-                       }
-                       catch (System.ArgumentException)
-                       {
-                           if (!WordCount.ContainsKey(word))
-                           {
-                               WordCount.Add(word, 1);
-                           }
-                           else
-                           {
-                               WordCount[word] += 1;
-                           }
-                       }
-
-                   });
-
-                Parallel.ForEach(WordCount, word =>
                 {
-                    SQLiteCommand command = new SQLiteCommand("INSERT INTO Dictionary (Word, Number_of_interactions) VALUES (@Word, @Num)", connection);
-                    command.Parameters.AddWithValue("@Word", word.Key);
-                    command.Parameters.AddWithValue("@Num", word.Value);
-                    command.ExecuteNonQuery();
+                    word = word.ToLower();
+                    try
+                    {
+                        if (word.Length > 3)
+                        {
+                            if (!WordCount.ContainsKey(word))
+                            {
+                                WordCount.Add(word, 1);
+                            }
+                            else
+                            {
+                                WordCount[word] += 1;
+                            }
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        if (!WordCount.ContainsKey(word))
+                        {
+                            WordCount.Add(word, 1);
+                        }
+                        else
+                        {
+                            WordCount[word] += 1;
+                        }
+                    }
+
                 });
 
+                string Dictionary_to_insert = "(" + string.Join("),(", WordCount.Select(x => "'" + x.Key + "'" + "," + x.Value).ToArray()) + ")";
 
-
+                SQLiteCommand command = new SQLiteCommand("INSERT INTO Dictionary (Word, Number_of_interactions) VALUES " + Dictionary_to_insert, connection);
+                command.ExecuteNonQuery();
+                //Debug.WriteLine("Parallel.ForEach() execution time = {0} seconds", stopWatch.Elapsed.TotalSeconds);
 
             }
             connection.Close();
             updateAutoComplete();
         }
 
-        private void clear_table()
+        public void clear_table()
         {
             connection.Open();
             SQLiteCommand command = new SQLiteCommand("Delete FROM Dictionary", connection);
@@ -180,7 +206,7 @@ namespace TestApp
             connection.Close();
             updateAutoComplete();
         }
-        private void updateAutoComplete()
+        public void updateAutoComplete()
         {
             connection.Open();
             SQLiteCommand ReadDictionary = new SQLiteCommand("SELECT Word FROM Dictionary ORDER BY Number_of_interactions DESC, Word", connection);
@@ -188,31 +214,9 @@ namespace TestApp
             while (DictionaryData.Read())
             {
                 globalList.Add(DictionaryData.GetString(0));
-                
             }
-            
-                connection.Close();
+
+            connection.Close();
         }
-
-        void listBox_SelectedAdd(object sender, KeyEventArgs e)
-        {
-
-            if (e.KeyValue == (decimal)Keys.Enter)
-            {
-                textBox1.Text += (((ListBox)sender).SelectedItem.ToString()).Substring(ToDelete);
-                if (textBox1.Text[textBox1.Text.Length - 1].ToString() != " ")
-                    textBox1.Text += " ";
-                System.Threading.Thread.Sleep(100);
-                listBox1.Hide();
-
-            }
-        }
-
-        private void listBox1_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            Debug.WriteLine(listBox1.SelectedItem);
-            
-        }
-
     }
 }
